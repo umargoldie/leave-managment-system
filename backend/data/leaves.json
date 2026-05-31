@@ -1,0 +1,11 @@
+[
+  {
+    "employeeId": 1,
+    "leaveType": "Sick Leave",
+    "startDate": "2026-06-01",
+    "endDate": "2026-06-03",
+    "reason": "Fever",
+    "id": 1,
+    "status": "Pending"
+  }
+]
