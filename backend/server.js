@@ -1,6 +1,10 @@
 const fastify = require('fastify')({ logger: true });
 const fs = require('fs');
 const path = require('path');
+// Frontend connection allow karne ke liye CORS register karein
+fastify.register(require('@fastify/cors'), { 
+  origin: true 
+});
 
 // JSON files ke paths define kar diye
 const employeesPath = path.join(__dirname, 'data', 'employees.json');
