@@ -3,7 +3,9 @@ const fs = require('fs');
 const path = require('path');
 // Frontend connection allow karne ke liye CORS register karein
 fastify.register(require('@fastify/cors'), { 
-  origin: true 
+  origin: ['http://localhost:5175', 'http://localhost:5173'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  credentials: true
 });
 
 // JSON files ke paths define kar diye
@@ -34,8 +36,8 @@ fastify.post('/employees', async (request, reply) => {
     const employees = readData(employeesPath);
     const newEmployee = request.body;
     
-    // Auto-increment ID logic
-    newEmployee.id = employees.length > 0 ? employees[employees.length - 1].id + 1 : 1;
+    // Generate unique ID using timestamp
+    newEmployee.id = Date.now().toString();
     
     employees.push(newEmployee);
     writeData(employeesPath, employees);
@@ -151,8 +153,8 @@ fastify.delete('/leaves/:id', async (request, reply) => {
 // ==========================================
 const start = async () => {
     try {
-        await fastify.listen({ port: 5000 });
-        console.log("Server is running on http://localhost:5000");
+        await fastify.listen({ port: 3000 });
+        console.log("Server is running on http://localhost:3000");
     } catch (err) {
         fastify.log.error(err);
         process.exit(1);

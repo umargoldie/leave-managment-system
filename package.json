@@ -1,5 +1,8 @@
 {
   "dependencies": {
     "@fastify/cors": "^11.2.0"
+  },
+  "devDependencies": {
+    "vite-plugin-vuetify": "^2.1.3"
   }
 }
