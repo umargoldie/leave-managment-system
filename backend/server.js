@@ -1,6 +1,7 @@
 const fastify = require('fastify')({ logger: true });
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcrypt');
 // Frontend connection allow karne ke liye CORS register karein
 fastify.register(require('@fastify/cors'), { 
   origin: ['http://localhost:5175', 'http://localhost:5173'],
@@ -11,6 +12,7 @@ fastify.register(require('@fastify/cors'), {
 // JSON files ke paths define kar diye
 const employeesPath = path.join(__dirname, 'data', 'employees.json');
 const leavesPath = path.join(__dirname, 'data', 'leaves.json');
+const usersPath = path.join(__dirname, 'data', 'users.json');
 
 // Helper function: JSON file se data read karne ke liye
 const readData = (filePath) => {
@@ -26,6 +28,79 @@ const readData = (filePath) => {
 const writeData = (filePath, data) => {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
 };
+
+// ==========================================
+// AUTH ROUTES
+// ==========================================
+fastify.post('/auth/register', async (request, reply) => {
+    const { username, email, password, role } = request.body || {};
+
+    if (!username || !username.trim()) {
+        return reply.code(400).send({ error: 'Username is required' });
+    }
+
+    if (!email || !email.trim()) {
+        return reply.code(400).send({ error: 'Email is required' });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        return reply.code(400).send({ error: 'Email format is invalid' });
+    }
+
+    if (!password || password.length < 6) {
+        return reply.code(400).send({ error: 'Password must be at least 6 characters long' });
+    }
+
+    const users = readData(usersPath);
+    const existingUser = users.find(user => user.email.toLowerCase() === email.toLowerCase());
+
+    if (existingUser) {
+        return reply.code(409).send({ error: 'Email already registered' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = {
+        id: Date.now().toString(),
+        username: username.trim(),
+        email: email.trim().toLowerCase(),
+        password: hashedPassword,
+        role: role || 'Employee'
+    };
+
+    users.push(newUser);
+    writeData(usersPath, users);
+
+    const { password: _, ...userWithoutPassword } = newUser;
+    return reply.code(201).send({ message: 'User registered successfully', user: userWithoutPassword });
+});
+
+fastify.post('/auth/login', async (request, reply) => {
+    const { email, password } = request.body || {};
+
+    if (!email || !email.trim()) {
+        return reply.code(400).send({ error: 'Email is required' });
+    }
+
+    if (!password) {
+        return reply.code(400).send({ error: 'Password is required' });
+    }
+
+    const users = readData(usersPath);
+    const user = users.find(item => item.email.toLowerCase() === email.trim().toLowerCase());
+
+    if (!user) {
+        return reply.code(401).send({ error: 'Invalid email or password' });
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+        return reply.code(401).send({ error: 'Invalid email or password' });
+    }
+
+    const { password: _, ...userWithoutPassword } = user;
+    return { message: 'Login successful', user: userWithoutPassword };
+});
 
 // ==========================================
 // EMPLOYEES CRUD ROUTES
