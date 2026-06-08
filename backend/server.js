@@ -2,6 +2,8 @@ const fastify = require('fastify')({ logger: true });
 const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcrypt');
+const { authMiddleware } = require('./middleware/authMiddleware');
+const { requireRole } = require('./middleware/roleMiddleware');
 
 fastify.register(require('@fastify/jwt'), {
   secret: 'super-secret-key'
@@ -33,6 +35,14 @@ const readData = (filePath) => {
 const writeData = (filePath, data) => {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
 };
+
+const sanitizeUser = (user) => {
+    if (!user) return user;
+    const { password, ...rest } = user;
+    return rest;
+};
+
+const adminOnly = [authMiddleware, requireRole(['Admin'])];
 
 // ==========================================
 // AUTH ROUTES
@@ -115,6 +125,110 @@ fastify.post('/auth/login', async (request, reply) => {
       token,
       user: userWithoutPassword
     };
+});
+
+// ==========================================
+// USER MANAGEMENT CRUD ROUTES (ADMIN ONLY)
+// ==========================================
+fastify.get('/users', { preHandler: adminOnly }, async (request, reply) => {
+    const users = readData(usersPath).map(sanitizeUser);
+    return users;
+});
+
+fastify.get('/users/:id', { preHandler: adminOnly }, async (request, reply) => {
+    const users = readData(usersPath);
+    const user = users.find(item => item.id.toString() === request.params.id);
+
+    if (!user) {
+        return reply.code(404).send({ error: 'User not found' });
+    }
+
+    return sanitizeUser(user);
+});
+
+fastify.post('/users', { preHandler: adminOnly }, async (request, reply) => {
+    const { username, email, password, role } = request.body || {};
+
+    if (!username || !username.trim()) {
+        return reply.code(400).send({ error: 'Username is required' });
+    }
+
+    if (!email || !email.trim()) {
+        return reply.code(400).send({ error: 'Email is required' });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        return reply.code(400).send({ error: 'Email format is invalid' });
+    }
+
+    if (!password || password.length < 6) {
+        return reply.code(400).send({ error: 'Password must be at least 6 characters long' });
+    }
+
+    const users = readData(usersPath);
+    if (users.some(item => item.email.toLowerCase() === email.trim().toLowerCase())) {
+        return reply.code(409).send({ error: 'Email already registered' });
+    }
+
+    const newUser = {
+        id: Date.now().toString(),
+        username: username.trim(),
+        email: email.trim().toLowerCase(),
+        password: await bcrypt.hash(password, 10),
+        role: role || 'Employee'
+    };
+
+    users.push(newUser);
+    writeData(usersPath, users);
+
+    return reply.code(201).send({ message: 'User created successfully', user: sanitizeUser(newUser) });
+});
+
+fastify.put('/users/:id', { preHandler: adminOnly }, async (request, reply) => {
+    const users = readData(usersPath);
+    const userIndex = users.findIndex(item => item.id.toString() === request.params.id);
+
+    if (userIndex === -1) {
+        return reply.code(404).send({ error: 'User not found' });
+    }
+
+    const { username, email, password, role } = request.body || {};
+
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return reply.code(400).send({ error: 'Email format is invalid' });
+    }
+
+    if (email && users.some(item => item.id.toString() !== request.params.id && item.email.toLowerCase() === email.trim().toLowerCase())) {
+        return reply.code(409).send({ error: 'Email already registered' });
+    }
+
+    if (password && password.length < 6) {
+        return reply.code(400).send({ error: 'Password must be at least 6 characters long' });
+    }
+
+    users[userIndex] = {
+        ...users[userIndex],
+        ...(username !== undefined ? { username: username.trim() } : {}),
+        ...(email !== undefined ? { email: email.trim().toLowerCase() } : {}),
+        ...(role !== undefined ? { role } : {}),
+        ...(password ? { password: await bcrypt.hash(password, 10) } : {})
+    };
+
+    writeData(usersPath, users);
+    return { message: 'User updated successfully', user: sanitizeUser(users[userIndex]) };
+});
+
+fastify.delete('/users/:id', { preHandler: adminOnly }, async (request, reply) => {
+    const users = readData(usersPath);
+    const filteredUsers = users.filter(item => item.id.toString() !== request.params.id);
+
+    if (filteredUsers.length === users.length) {
+        return reply.code(404).send({ error: 'User not found' });
+    }
+
+    writeData(usersPath, filteredUsers);
+    return { message: 'User deleted successfully' };
 });
 
 // ==========================================
@@ -217,6 +331,10 @@ fastify.put('/leaves/:id', async (request, reply) => {
     if (index === -1) {
         return reply.code(404).send({ error: 'Leave request not found' });
     }
+
+    if (['Approved', 'Rejected'].includes(leaves[index].status)) {
+        return reply.code(400).send({ error: 'This leave request is already finalized and cannot be updated' });
+    }
     
     leaves[index] = { ...leaves[index], ...request.body };
     writeData(leavesPath, leaves);
@@ -224,16 +342,51 @@ fastify.put('/leaves/:id', async (request, reply) => {
     return leaves[index];
 });
 
+fastify.put('/leaves/:id/approve', { preHandler: [authMiddleware, requireRole(['Admin'])] }, async (request, reply) => {
+    const leaves = readData(leavesPath);
+    const leaveId = parseInt(request.params.id);
+    const index = leaves.findIndex(l => l.id === leaveId);
+
+    if (index === -1) {
+        return reply.code(404).send({ error: 'Leave request not found' });
+    }
+
+    leaves[index].status = 'Approved';
+    writeData(leavesPath, leaves);
+
+    return reply.code(200).send({ message: 'Leave request approved successfully', leave: leaves[index] });
+});
+
+fastify.put('/leaves/:id/reject', { preHandler: [authMiddleware, requireRole(['Admin'])] }, async (request, reply) => {
+    const leaves = readData(leavesPath);
+    const leaveId = parseInt(request.params.id);
+    const index = leaves.findIndex(l => l.id === leaveId);
+
+    if (index === -1) {
+        return reply.code(404).send({ error: 'Leave request not found' });
+    }
+
+    leaves[index].status = 'Rejected';
+    writeData(leavesPath, leaves);
+
+    return reply.code(200).send({ message: 'Leave request rejected successfully', leave: leaves[index] });
+});
+
 // 4. DELETE: Leave request ko delete karne ke liye
 fastify.delete('/leaves/:id', async (request, reply) => {
     const leaves = readData(leavesPath);
     const leaveId = parseInt(request.params.id);
-    const filteredLeaves = leaves.filter(l => l.id !== leaveId);
-    
-    if (leaves.length === filteredLeaves.length) {
+    const index = leaves.findIndex(l => l.id === leaveId);
+
+    if (index === -1) {
         return reply.code(404).send({ error: 'Leave request not found' });
     }
-    
+
+    if (['Approved', 'Rejected'].includes(leaves[index].status)) {
+        return reply.code(400).send({ error: 'This leave request is already finalized and cannot be deleted' });
+    }
+
+    const filteredLeaves = leaves.filter(l => l.id !== leaveId);
     writeData(leavesPath, filteredLeaves);
     return { message: 'Leave request deleted successfully' };
 });

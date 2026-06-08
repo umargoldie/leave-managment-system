@@ -12,7 +12,7 @@ const authMiddleware = async (request, reply) => {
   }
 
   try {
-    request.user = await request.jwt.verify(token);
+    request.user = await request.server.jwt.verify(token);
   } catch (error) {
     return reply.code(401).send({ error: 'Unauthorized' });
   }
