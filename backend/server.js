@@ -2,6 +2,11 @@ const fastify = require('fastify')({ logger: true });
 const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcrypt');
+
+fastify.register(require('@fastify/jwt'), {
+  secret: 'super-secret-key'
+});
+
 // Frontend connection allow karne ke liye CORS register karein
 fastify.register(require('@fastify/cors'), { 
   origin: ['http://localhost:5175', 'http://localhost:5173'],
@@ -99,7 +104,17 @@ fastify.post('/auth/login', async (request, reply) => {
     }
 
     const { password: _, ...userWithoutPassword } = user;
-    return { message: 'Login successful', user: userWithoutPassword };
+    const token = fastify.jwt.sign({
+      id: user.id,
+      username: user.username,
+      role: user.role
+    });
+
+    return {
+      message: 'Login successful',
+      token,
+      user: userWithoutPassword
+    };
 });
 
 // ==========================================
