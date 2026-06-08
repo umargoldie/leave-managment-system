@@ -6,6 +6,15 @@
     "endDate": "2026-06-03",
     "reason": "Fever",
     "id": 1,
-    "status": "Pending"
+    "status": "Approved"
+  },
+  {
+    "employeeId": 1,
+    "leaveType": "Casual Leave",
+    "startDate": "2233-02-23",
+    "endDate": "2333-02-22",
+    "reason": "",
+    "id": 2,
+    "status": "Rejected"
   }
 ]
